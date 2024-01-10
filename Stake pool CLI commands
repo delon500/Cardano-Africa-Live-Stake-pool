@@ -1,0 +1,560 @@
+Cardano Command Line Interface (CLI)
+
+cardano-cli: 
+This is the main Cardano command-line tool that provides various subcommands for interacting with the blockchain.
+The cardano-cli command line interface (CLI) is installed as part of the node installation process.
+
+cardono-cli node: 
+	This is a subcommand of cardano-cli, specifically related to the Cardano node. 
+	The node subcommand provides functionality related to the Cardano node, 
+	including commands for starting, stopping, and validating the topology.
+	
+	validate-topology: Validates a topology file.
+	shutdown: Gracefully shuts down a Cardano node.
+	version: Displays the Cardano node version information.
+	run: Starts the Cardano node.
+
+Generating Keys
+Register a StakePool using the following commands:
+
+cardano-cli stake-pool registration-certificate \
+--cold-verification-key-file cold.vkey \
+--vrf-verification-key-file vrf.vkey \
+--pool-pledge <AMOUNT TO PLEDGE IN LOVELACE> \
+--pool-cost <POOL COST PER EPOCH IN LOVELACE> \
+--pool-margin <POOL OPERATOR MARGIN > \
+--pool-reward-account-verification-key-file stake.vkey \
+--pool-owner-stake-verification-key-file stake.vkey \
+--testnet-magic 2 \
+--pool-relay-ipv4 <RELAY NODE PUBLIC IP> \
+--pool-relay-port <RELAY NODE PORT> \
+--single-host-pool-relay STRING <The stake pool relay's DNS name that corresponds to an A or AAAA DNS record> \
+--metadata-url https://git.io/JJWdJ \
+--metadata-hash <POOL METADATA HASH> \
+--out-file pool-registration.cert
+
+Generate Keys in the Air-Gapped Machine
+
+Payment and stake keys: 
+	Generate payment keys:
+	cardano-cli address key-gen \
+	--verification-key-file payment.vkey \
+	--signing-key-file payment.skey
+
+Generate stake keys:
+	cardano-cli stake-address key-gen \
+	--verification-key-file stake.vkey \
+	--signing-key-file stake.skey
+
+Generate the payment address:
+	cardano-cli address build \
+	--payment-verification-key-file payment.vkey \
+	--stake-verification-key-file stake.vkey \
+	--testnet-magic 2 \
+	--out-file payment.addr
+
+Cold keys:
+	cardano-cli node key-gen \
+	--cold-verification-key-file cold.vkey \
+	--cold-signing-key-file cold.skey \
+	--operational-certificate-issue-counter-file opcert.counter
+
+Key evolving signature (KES) keys:
+	cardano-cli node key-gen-KES \
+	--verification-key-file kes.vkey \
+	--signing-key-file kes.skey
+
+Verifiable random function (VRF) keys:
+	cardano-cli node key-gen-VRF \
+	--verification-key-file vrf.vkey \
+	--signing-key-file vrf.skey
+
+Upload keys to the block-producing node:
+	mkdir keys
+	
+Use a USB drive to bring kes.skey vrf.skey and opcert.cert to your working machine and from there, upload:
+scp kes.skey vrf.skey opcert.cert username@host:/remote/directory
+
+Registering a stake pool
+
+
+Register the stake address:
+	cardano-cli stake-address registration-certificate \
+	--stake-verification-key-file stake.vkey \
+	--out-file registration.cert
+
+	cardano-cli transaction build \
+	--testnet-magic 2 \
+	--witness-override 2 \
+	--tx-in $(cardano-cli query utxo --address $(cat payment.addr) --testnet-magic 2 --out-file  /dev/stdout | jq -r 'keys[0]') \
+	--change-address $(cat payment.addr) \
+	--certificate-file registration.cert \
+	--out-file tx.raw
+
+	cardano-cli transaction sign \
+	--tx-body-file tx.raw \
+	--signing-key-file payment.skey \
+	--signing-key-file stake.skey \
+	--testnet-magic 2 \
+	--out-file tx.signed
+
+	cardano-cli transaction submit \
+	--testnet-magic 2 \
+	--tx-file tx.signed 
+
+Registering a Stake Pool with Metadata
+First, make sure you have access to:
+
+| File | Content |
+| :--- | :--- |
+| `payment.vkey` | payment verification key |
+| `payment.skey` | payment signing key |
+| `stake.vkey` | staking verification key |
+| `stake.skey` | staking signing key |
+| `stake.addr` | registered stake address |
+| `payment.addr` | funded address linked to `stake` |
+| `cold.vkey` | cold verification key |
+| `cold.skey` | cold signing key |
+| `opcert.counter` | issue counter |
+| `opcert.cert` | operational certificate |
+| `kes.vkey` | KES verification key |
+| `kes.skey` | KES signing key |
+| `vrf.vkey` | VRF verification key |
+| `vrf.skey` | VRF signing key |
+
+To register your stake pool you will need to:
+* Create a JSON file with your metadata and store it in the node and in the url you maintain
+* Get the hash of your JSON file
+* Generate the stake pool registration certificate
+* Create a delegation certificate pledge
+* Submit the certificates to the blockchain
+
+Create a JSON file with your pool's metadata:
+{
+   "name": "TestPool",
+   "description": "The pool that tests all the pools",
+   "ticker": "TEST",
+   "homepage": "https://teststakepool.com"
+}
+
+Generate a stake pool registration certificate
+
+Create the registration certificate:
+	cardano-cli stake-pool registration-certificate \
+	--cold-verification-key-file cold.vkey \
+	--vrf-verification-key-file vrf.vkey \
+	--pool-pledge 9000000000 \
+	--pool-cost 340000000 \
+	--pool-margin .05 \
+	--pool-reward-account-verification-key-file stake.vkey \
+	--pool-owner-stake-verification-key-file stake.vkey \
+	--testnet-magic 2 \
+	--pool-relay-ipv4 <RELAY NODE PUBLIC IP> \
+	--pool-relay-port <RELAY NODE PORT> \
+	--metadata-url https://git.io/JJWdJ \
+	--metadata-hash <POOL METADATA HASH> \
+	--out-file pool-registration.cert
+	
+| Parameter | Explanation |
+| :--- | :--- |
+| cold-verification-key-file | verification _cold_ key |
+| vrf-verification-key-file | verification _VRS_ key |
+| pool-pledge | pledge lovelace |
+| pool-cost | operational costs per epoch lovelace |
+| pool-margin | share of total ada rewards that the operator takes, must be from 0 to 1 |
+| pool-reward-account-verification-key-file | verification staking key for the rewards |
+| pool-owner-staking-verification-key-file | verification staking keys for the pool owners |
+| pool-relay-ipv4 | relay node ip address |
+| pool-relay-port | port |
+| metadata-url | url of your json file |
+| metadata-hash | the hash of pools json metadata file |
+| out-file | output file to write the certificate to |
+	
+Create the delegation certificate to honor the pledge:
+    cardano-cli stake-address delegation-certificate \
+    --stake-verification-key-file stake.vkey \
+    --cold-verification-key-file cold.vkey \
+    --out-file delegation.cert
+
+Submit certificates:
+	cardano-cli transaction build \
+	--testnet-magic 2 \
+	--witness-override 3 \
+	--tx-in $(cardano-cli query utxo --address $(cat payment.addr) --testnet-magic 2 --out-file  /dev/stdout | jq -r 'keys[1]') \
+	--change-address $(cat payment.addr) \
+	--certificate-file pool-registration.cert \
+	--certificate-file delegation.cert \
+	--out-file tx.raw
+	
+	cardano-cli transaction sign \
+	--tx-body-file tx.raw \
+	--signing-key-file payment.skey \
+	--signing-key-file cold.skey \
+	--signing-key-file stake.skey \
+	--testnet-magic 2 \
+	--out-file tx.signed
+	
+	cardano-cli transaction submit \
+	--testnet-magic 2 \
+	--tx-file tx.signed
+	
+Get delegation funds from the testnet faucet
+	cardano-cli stake-pool id \
+	--cold-verification-key-file cold.vkey \
+	--output-format bech32
+	
+Issue an Operational certificate
+	cardano-cli query tip --testnet-magic 2
+	>
+	{
+		"block": 552276,
+		"epoch": 143,
+		"era": "Babbage",
+		"hash": "fe9c9b4b3f70262f60183bf0d8e72077c559345b22b47d4d4af91d4e5a4b5994",
+		"slot": 12380321,
+		"syncProgress": "100.00"
+	}
+Divide:
+	echo $((12380321 / 129600))
+	95
+
+On the air-gapped machine, run:
+	cardano-cli node issue-op-cert --kes-verification-key-file kes.vkey \
+	--cold-signing-key-file cold.skey \ 
+	--operational-certificate-issue-counter-file opcert.counter \
+	--kes-period <95> \
+	--out-file opcert.cert
+
+
+*Running the nodes*
+
+Prepare topology files
+	*This is a basic setup with x.x.x.x and y.y.y.y representing the IP addresses of the stake pool operator's relays:
+
+Block Producer
+	
+	* The Valency parameter determines the total number of connections to local roots. 
+	  For instance, if you want a hot connection with both x.x.x.x and y.y.y.y relays, set Valency to 2.
+	  
+	* UseLedgerAfterSlot is configured to be -1 to ensure that ledger peers are never utilized on the block producer.
+	
+	nano configuration/topology.json	
+	{
+	   "localRoots":[
+		  {
+			 "accessPoints":[
+				{
+				   "address":"x.x.x.x",
+				   "port":3000
+				},
+				{
+				   "address":"y.y.y.y",
+				   "port":3000
+				}
+			 ],
+			 "advertise":false,
+			 "valency":2
+		  }
+	   ],
+	   "publicRoots":[
+		  {
+			 "accessPoints":[
+				
+			 ],
+			 "advertise":false
+		  }
+	   ],
+	   "useLedgerAfterSlot":-1
+	}
+
+Relays
+
+	* Your relays will connect to the block producer z.z.z.z and to your other relay y.y.y.y.
+	* Use Valency 2 to tell the node to maintain a hot connection with both nodes.
+	* Set useLedgerAfterSlot: 1000000. Make sure that the target slot is not too old, in particular, if syncing the chain for the first time.
+	
+	{
+	   "localRoots":[
+		  {
+			 "accessPoints":[
+				{
+				   "address":"z.z.z.z",
+				   "port":3000
+				},
+				{
+				   "address":"y.y.y.y",
+				   "port":3000
+				}
+			 ],
+			 "advertise":false,
+			 "valency":2
+		  }
+	   ],
+	   "publicRoots":[
+		  {
+			 "accessPoints":[
+				{
+				   "address":"preview-node.world.dev.cardano.org",
+				   "port":30002
+				}         
+			 ],
+			 "advertise":false
+		  }
+	   ],
+	   "useLedgerAfterSlot":1000000
+	}
+
+Prepare startup scripts
+
+For the block producer:
+
+	nano startnode.sh
+	
+	#!/bin/bash
+
+	# Configuration variables
+	TOPOLOGY_FILE="configuration/topology.json"
+	CONFIG_FILE="configuration/config.json"
+	DATABASE_PATH="db"
+	SOCKET_PATH="socket/node.socket"
+	KES_PATH="keys/kes.skey"
+	VRF_PATH="keys/vrf.skey"
+	OPCERT_PATH="keys/opcert.cert"
+	HOST_ADDR="0.0.0.0"
+	PORT="3000"
+
+	cardano-node run \
+		--topology "${TOPOLOGY_FILE}" \
+		--database-path "${DATABASE_PATH}" \
+		--socket-path "${SOCKET_PATH}" \
+		--host-addr "${HOST_ADDR}" \
+		--shelley-kes-key "${KES_PATH}"  \ 
+		--shelley-vrf-key "${VRF_PATH}" \
+		--shelley-operational-certificate "${OPCERT_PATH}" \
+		--port "${PORT}" \
+		--config "${CONFIG_FILE}" 
+
+For the relays:
+	
+	nano startnode.sh
+	
+	#!/bin/bash
+
+	# Configuration variables
+	TOPOLOGY_FILE="configuration/topology.json"
+	CONFIG_FILE="configuration/config.json"
+	DATABASE_PATH="db"
+	SOCKET_PATH="socket/node.socket"
+	HOST_ADDR="0.0.0.0"
+	PORT="3000"
+
+	cardano-node run \
+		--topology "${TOPOLOGY_FILE}" \
+		--database-path "${DATABASE_PATH}" \
+		--socket-path "${SOCKET_PATH}" \
+		--host-addr "${HOST_ADDR}" \
+		--port "${PORT}" \
+		--config "${CONFIG_FILE}"
+		
+Set up the Cardano node to run as systemd service
+
+	*It will be useful to set your time zone to UTC:
+	
+		sudo timedatectl set-timezone UTC
+	 
+	*Create the cardano-node.service file. The example saves it on:
+	
+		sudo nano /etc/systemd/system/cardano-node.service
+		
+			# The Cardano node service (part of systemd)
+			# file: /etc/systemd/system/cardano-node.service
+
+			 [Unit]
+			Description       = Cardano Node Service
+			Wants             = network-online.target
+			After             = network-online.target
+
+			[Service]
+			User=clr
+			Type=simple
+			WorkingDirectory=/home/clr
+			ExecStart=/home/clr/startnode.sh
+			KillSignal=SIGINT
+			RestartKillSignal=SIGINT
+			TimeoutStopSec=300
+			LimitNOFILE=32768
+			Restart=always
+			RestartSec=5
+			SyslogIdentifier=cardano-node
+
+			 [Install]
+			WantedBy          = multi-user.target
+		
+		*To start Cardano Node as a service when the computer boots, type:
+		
+			sudo systemctl daemon-reload
+
+			sudo systemctl enable cardano-node.service
+		
+		sudo systemctl start cardano-node.service
+
+Use journalctl to inspect your node logs:
+
+	*Follow the logs in real-time:
+	
+		journalctl --unit=cardano-node --follow
+		
+	*Show only the actual message (pure node logs) without any metadata from journalctl:
+	
+		journalctl --unit=cardano-node --follow --output=cat
+
+
+Pool operations and maintenance
+	
+
+	*Querying the stake snapshot
+		The stake snapshot returns information about the mark, set, go ledger snapshots for a pool, 
+		plus the total active stake for each snapshot that can be used in a 'sigma' calculation:
+	
+		cardano-cli query stake-snapshot \
+		--testnet-magic 2 \
+		--stake-pool-id <pool_id>
+		
+	*Querying the leadership schedule
+		You can calculate the leadership schedule for your stake pool with:
+		Shelley genesis file, Stake pool ID & VRF signing key
+		Specifying the --current flag will yield the leadership schedule for the current epoch as follows:
+		
+		cardano-cli query leadership-schedule \
+		--testnet-magic 2 \
+		--cold-verification-key-file cold.vkey \
+		--genesis shelley-genesis.json \
+		--vrf-signing-key-file vrf.skey \
+		--current
+		
+		cardano-cli query leadership-schedule \
+		--testnet-magic 2 \
+		--cold-verification-key-file cold.vkey \
+		--genesis shelley-genesis.json \
+		--vrf-signing-key-file vrf.skey \
+		--next
+		
+	*Checking the validity of your KES keys
+	
+		cardano-cli query kes-period-info \
+		--testnet-magic 2 \
+		--op-cert-file opcert.cert
+		
+		✓ Operational certificate's KES period is within the correct KES period interval
+		✓ The operational certificate counter agrees with the node protocol state counter
+		{
+			"qKesCurrentKesPeriod": 107,
+			"qKesEndKesInterval": 166,
+			"qKesKesKeyExpiry": null,
+			"qKesMaxKESEvolutions": 62,
+			"qKesNodeStateOperationalCertificateNumber": 2,
+			"qKesOnDiskOperationalCertificateNumber": 2,
+			"qKesRemainingSlotsInKesPeriod": 7632249,
+			"qKesSlotsPerKesPeriod": 129600,
+			"qKesStartKesInterval": 104
+		}
+		
+	*Withdrawing rewards
+		Build the stake address:
+		
+		cardano-cli stake-address build \
+		--testnet-magic 2 \
+		--stake-verification-key-file stake.vkey \
+		--out-file stake.addr
+		
+		Query its balance:
+		
+		cardano-cli query stake-address-info \
+		--testnet-magic 2 \
+		--address $(cat stake.addr)
+		
+			Example output:
+			[
+				{
+					"address": "stake_test1urdflexy7e3uuflpvs0zycrc7zc8rtg9hguglvwq545j7mqf09vna",
+					"delegation": "pool15r46gslrnhpe7ekvecfl895sm2pzhsxa8dhwh9ymgf06st3l86e",
+					"rewardAccountBalance": 1834628277
+				}
+			]
+			
+		You can use jq to parse the output, for example, this jq command outputs 'address+balance', 
+		which will be useful later when building your transaction:
+		
+		cardano-cli query stake-address-info \
+		--testnet-magic 2 \
+		--address $(cat stake.addr) | jq -r '.[0].address + "+" + (.[0].rewardAccountBalance|tostring)'
+		
+		Output:
+		stake_test1upcezzdyhjcdcgdh28gy3w2xkfdxvs0hmee2p0v25l9uc8cgpaq2e+1579546084
+		
+		Build a transaction to withdraw rewards, use --witness-override 2. It will be signed by stake and payment keys:
+		
+			cardano-cli transaction build \
+			--testnet-magic 2 \
+			--witness-override 2 \
+			--tx-in $(cardano-cli query utxo --address $(cat payment.addr) --testnet-magic 2 --out-file  /dev/stdout | jq -r 'keys[0]') \
+			--withdrawal $(cat stake.addr)+1834628277 \
+			--change-address $(cat payment.addr) \
+			--out-file withdraw-tx.raw
+			
+		Or, use this more automatic approach:
+			cardano-cli transaction build \
+			--testnet-magic 2 \
+			--witness-override 2 \
+			--tx-in $(cardano-cli query utxo --address $(cat payment.addr) --testnet-magic 2 --out-file  /dev/stdout | jq -r 'keys[0]') \
+			--withdrawal $(cardano-cli query stake-address-info --testnet-magic 2 --address $(cat stake.addr) | jq -r '.[0].address + "+" + (.[0].rewardAccountBalance|tostring)') \
+			--change-address $(cat payment.addr) \
+			--out-file withdraw-tx.raw
+			
+			cardano-cli transaction submit \
+			--tx-file withdraw-tx.signed \
+			--testnet-magic 2
+			
+	*Changing pool parameters
+		You can update pool parameters using a new registration certificate. 
+		This time you will not pay the 500 ada deposit:
+		
+		cardano-cli stake-pool registration-certificate \
+		--testnet-magic 2 \
+		--cold-verification-key-file cold.vkey \
+		--vrf-verification-key-file vrf.vkey \
+		--pool-pledge <AMOUNT TO PLEDGE IN LOVELACE> \
+		--pool-cost <POOL COST PER EPOCH IN LOVELACE> \
+		--pool-margin <POOL OPERATOR MARGIN > \
+		--pool-reward-account-verification-key-file stake.vkey \
+		--pool-owner-stake-verification-key-file stake.vkey \
+		--pool-relay-ipv4 <RELAY NODE PUBLIC IP> \
+		--pool-relay-port <RELAY NODE PORT> \
+		--metadata-url <URL> \
+		--metadata-hash <POOL METADATA HASH> \
+		--out-file pool-registration.cert
+		
+		Submit pool-registration.cert in a transaction.
+		On a machine with a running node:
+		
+		cardano-cli transaction build \
+		--testnet-magic 2 \
+		--tx-in $(cardano-cli query utxo --address $(cat payment.addr) --testnet-magic 2 --out-file  /dev/stdout | jq -r 'keys[0]') \
+		--change-address $(cat payment.addr) \
+		--witness-override 3 \
+		--certificate-file pool-registration.cert \
+		--out-file tx.raw
+		
+		Sign the tx.raw on your air-gapped machine:
+		cardano-cli transaction sign \
+		--testnet-magic 2 \
+		--tx-body-file tx.raw \
+		--signing-key-file payment.skey \
+		--signing-key-file stake.skey \
+		--signing-key-file cold.skey \
+		--out-file tx.signed
+		
+		Back on the machine with the running node, submit tx.signed:
+		cardano-cli transaction submit \
+		--testnet-magic 2 \
+		--tx-file tx.sigend 
